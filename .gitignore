@@ -1,0 +1,5 @@
+*.ini
+venv/
+*.pdf
+figs/
+local/
