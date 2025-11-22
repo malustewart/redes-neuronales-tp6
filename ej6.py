@@ -12,9 +12,10 @@ def split_data(ratio):
     pass
     # return training, evaluation
 
-def regression(x, y, deg, xrange):
-    # p = np.polyfit(x, y, deg)
-    p = np.polynomial.polynomial.Polynomial.fit(x, y, deg, xrange)
+def get_poly_regression(x, y, deg, xrange):
+    return np.polynomial.polynomial.Polynomial.fit(x, y, deg, xrange)
+
+def evaluate_poly_in_range(p, xrange):
     return p.linspace(200, xrange)
 
 def params_to_str(params:dict, sep:str = " - "):
@@ -28,19 +29,27 @@ def plot_height_weight_regression(height, weight, regressions:list, regression_o
     # plt.rcParams["axes.prop_cycle"] = plt.cycler("color", plt.cm.viridis(np.linspace(0,1,len(regressions))))   # no funciona
     for reg, order in zip(regressions, regression_order):
         ax.plot(reg[0], reg[1], label=f"Regresión orden {order}")
+    fig.legend()
     if filename:
         pass
 
 if __name__ == '__main__':
     filepath = 'data/akc.csv'
     data = load_data(filepath)
-    print(data)
 
     polydegree = list(range(7))
 
     hrange = [np.min(data['height']), np.max(data['height'])]
 
-    regs = [regression(data['height'], data['weight'], n, hrange) for n in polydegree]
-    plot_height_weight_regression(data['height'], data['weight'], regs, polydegree, {})
+    regs_poly = [get_poly_regression(data['height'], data['weight'], n, hrange) for n in polydegree]
+    regs_to_plot = [evaluate_poly_in_range(reg_poly, hrange) for reg_poly in regs_poly]
+    plot_height_weight_regression(data['height'], data['weight'], regs_to_plot, polydegree, {})
+
+    w_est_all_n = np.array([[reg_poly(h) for h in data['height']] for reg_poly in regs_poly])
+
+    mse  = [ np.mean((w_est - data['weight'])**2) for w_est in w_est_all_n]
+
+    plt.figure()
+    plt.semilogy(mse)
 
     plt.show()
