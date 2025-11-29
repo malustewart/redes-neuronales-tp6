@@ -18,8 +18,11 @@ def split_data(data, ratio):
     evaluation = data.drop(labels)
     return training, evaluation
 
-def get_poly_regression(x, y, deg, xrange):
-    return np.polynomial.polynomial.Polynomial.fit(x, y, deg, xrange).convert().coef
+def get_poly_regression(x, y, deg, xrange, λ=0):
+    X = np.array([x.to_numpy()**i for i in range(deg + 1)])
+    Y = y.to_numpy()
+    w = np.linalg.inv(X@X.T + λ * np.eye(len(X))) @ X @ Y.T
+    return w
 
 def evaluate_poly_in_range(p, xrange):
     return p.linspace(200, xrange)
