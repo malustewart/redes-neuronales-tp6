@@ -18,31 +18,33 @@ def split_data(data, ratio):
     evaluation = data.drop(labels)
     return training, evaluation
 
-def get_poly_regression(x, y, deg, xrange, λ=0):
+def get_poly_regression(x, y, deg, λ=0):
     X = np.array([x.to_numpy()**i for i in range(deg + 1)])
     Y = y.to_numpy()
     w = np.linalg.inv(X@X.T + λ * np.eye(len(X))) @ X @ Y.T
     return w
-
+ 
 def evaluate_poly_in_range(p, xrange):
     return p.linspace(200, xrange)
 
 def params_to_str(params:dict, sep:str = " - "):
     return sep.join(f"{k}: {v}" for k,v in params.items())
 
-def plot_height_weight_regression(height, weight, regressions:list, regression_order: list, title="Regresión altura-peso", ylabel="Altura", xlabel="Peso", params={}, filename=None):
+def plot_height_weight_regression(height, weight, regressions:list, regression_order: list, title="Regresión altura-peso", ylabel="Altura", xlabel="Peso", plotlabel="Regresión orden", params={}, filename=None):
     fig = plt.figure(figsize=(10,8))
     ax = fig.gca()
     ax.scatter(height, weight)
     for reg, order in zip(regressions, regression_order):
-        ax.plot(reg[0], reg[1], label=f"Regresión orden {order}")
+        ax.plot(reg[0], reg[1], label=f"{plotlabel} {order}")
     fig.legend()
     ax.set_title(title + " - " + params_to_str(params))
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
+    ax.grid()
 
     if filename:
         fig.savefig(filename)
+        plt.close(fig)
 
 def plot_mse(x, mses, labels=None, title="MSE", ylabel="mse", xlabel="Orden regresión", params={}, filename=None):
     fig = plt.figure(figsize=(10,8))
@@ -53,26 +55,60 @@ def plot_mse(x, mses, labels=None, title="MSE", ylabel="mse", xlabel="Orden regr
     ax.set_title(title + " - " + params_to_str(params))
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
+    ax.grid()
 
     if filename:
         fig.savefig(filename)
+        plt.close(fig)
 
 def calc_mse(A, B):
     return np.mean((A - B)**2)
 
-def calc_fit_and_mse(data, training_ratio, polydegrees):
-    training_ratio = 0.5
+def evaluate_poly(coefs, X):
+    # coefs: polynomial coefficients (lowest order first)
+    return np.array([np.polyval(coefs[::-1], x) for x in X])
+
+def calc_fit_and_mse(data, training_ratio, polydegrees, lambdas=[0]):
     training_data, evaluation_data = split_data(data, training_ratio)
+    N_deg = len(polydegrees)
+    N_lambda = len(lambdas)
 
-    hrange = [np.min(training_data['height']), np.max(training_data['height'])]
-    regs_poly_coef = [get_poly_regression(training_data['height'], training_data['weight'], n, hrange) for n in polydegrees]
-    regs_poly = [Polynomial(coef) for coef in regs_poly_coef]
+    coefs = np.array([np.array([get_poly_regression(training_data['height'], training_data['weight'], n, lamda) for n in polydegrees], dtype=object) for lamda in lambdas])
+    mse_training = np.array([np.array([calc_mse(training_data['weight'], evaluate_poly(coefs[i][j], training_data['height'])) for j in range(N_deg)]) for i in range(N_lambda)])
+    mse_evaluation = np.array([np.array([calc_mse(evaluation_data['weight'], evaluate_poly(coefs[i][j], evaluation_data['height'])) for j in range(N_deg)]) for i in range(N_lambda)])
+    return coefs, mse_training, mse_evaluation
 
-    w_est_all_n_training = np.array([[reg_poly(h) for h in training_data['height']] for reg_poly in regs_poly])
-    w_est_all_n_evaluation = np.array([[reg_poly(h) for h in evaluation_data['height']] for reg_poly in regs_poly])
-    mse_training = [calc_mse(w_est, training_data['weight']) for w_est in w_est_all_n_training]
-    mse_evaluation = [calc_mse(w_est, evaluation_data['weight']) for w_est in w_est_all_n_evaluation]
-    return regs_poly_coef, mse_training, mse_evaluation
+def process_and_plot(data, training_ratio, lambdas, polydegrees, training=True, evaluation=True):
+    hrange = [np.min(data['height']), np.max(data['height'])]
+    coefs, mse_training, mse_evaluation = calc_fit_and_mse(data=data, training_ratio=training_ratio, polydegrees=polydegrees, lambdas=lambdas)
+
+    mses=[]
+    labels=[]
+    if training:
+        mses.append(mse_training)
+        labels.append("Entrenamiento")
+    if evaluation:
+        mses.append(mse_evaluation)
+        labels.append("Evaluación")
+
+    hspace = np.linspace(hrange[0], hrange[1], 100)
+    for i, lamda in enumerate(lambdas):
+        w_est_to_plot = [[hspace, Polynomial(coef)(hspace)] for coef in coefs[i]]
+        params = {
+            r"% de datos para entrenamiento":f"{100*training_ratio}%",
+            "lambda": lamda
+        }
+        plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, polydegrees, params=params, filename=f"figs/fit_tr_{training_ratio}_lambda_{lamda}.png")
+        plot_mse(polydegrees, mses=[mse[i] for mse in mses], labels=labels, params=params, filename=f"figs/mse_tr_{training_ratio}_lambda_{lamda}.png")
+    
+    for i, deg in enumerate(polydegrees):
+        w_est_to_plot = [[hspace, Polynomial(coef)(hspace)] for coef in coefs[:,i]]
+        params = {
+            r"% de datos para entrenamiento":f"{100*training_ratio}%",
+            "Orden polinomio": deg
+        }
+        plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, lambdas, plotlabel="λ:", params=params, filename=f"figs/fit_tr_{training_ratio}_polydeg_{deg}.png")
+        plot_mse(lambdas, mses=[mse[:,i] for mse in mses], labels=labels, xlabel="λ", params=params, filename=f"figs/mse_tr_{training_ratio}_polydeg_{deg}.png")
 
 if __name__ == '__main__':
     random.seed(123456)
@@ -80,26 +116,13 @@ if __name__ == '__main__':
     filepath = 'data/akc.csv'
     data = load_data(filepath)
 
-    polydegrees = list(range(7))
-
-    hrange = [np.min(data['height']), np.max(data['height'])]
-
     # 100% de datos para entrenamiento
 
     training_ratio=1
-    regs_poly_coef, mse_training, mse_evaluation = calc_fit_and_mse(data=data, training_ratio=training_ratio, polydegrees=polydegrees)
-    hspace = np.linspace(hrange[0], hrange[1], 100)
-    w_est_to_plot = [[hspace, Polynomial(coef)(hspace)] for coef in regs_poly_coef]
-    plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, polydegrees)
-    plot_mse(polydegrees, [mse_training], labels=["Entrenamiento"], params={r"% de datos para entrenamiento":100*training_ratio})
+    lambdas = [0, 1.0, 5.0]
+    polydegrees = list(range(5))
+    process_and_plot(data, training_ratio, lambdas, polydegrees, training=False)
 
     # 80% de datos para entrenamiento, 20% para evaluacion
-       
     training_ratio=0.8
-    regs_poly_coef, mse_training, mse_evaluation = calc_fit_and_mse(data=data, training_ratio=training_ratio, polydegrees=polydegrees)
-    hspace = np.linspace(hrange[0], hrange[1], 100)
-    w_est_to_plot = [[hspace, Polynomial(coef)(hspace)] for coef in regs_poly_coef]
-    plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, polydegrees)
-    plot_mse(polydegrees, [mse_training, mse_evaluation], labels=["Entrenamiento", "Evaluación"], params={r"% de datos para entrenamiento":100*training_ratio})
-
-    plt.show()
+    process_and_plot(data, training_ratio, lambdas, polydegrees)
