@@ -121,7 +121,7 @@ if __name__ == '__main__':
     training_ratio=1
     lambdas = [0, 1.0, 5.0]
     polydegrees = list(range(5))
-    process_and_plot(data, training_ratio, lambdas, polydegrees, training=False)
+    process_and_plot(data, training_ratio, lambdas, polydegrees, evaluation=False)
 
     # 80% de datos para entrenamiento, 20% para evaluacion
     training_ratio=0.8
