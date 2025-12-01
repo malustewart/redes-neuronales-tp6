@@ -78,9 +78,57 @@ def calc_fit_and_mse(data, training_ratio, polydegrees, lambdas=[0]):
     mse_evaluation = np.array([np.array([calc_mse(evaluation_data['weight'], evaluate_poly(coefs[i][j], evaluation_data['height'])) for j in range(N_deg)]) for i in range(N_lambda)])
     return coefs, mse_training, mse_evaluation
 
+def plot_mse_heatmap(mse_training, mse_evaluation, lambdas, polydeg, params, filename):
+    fig, axes = plt.subplots(2, 1, figsize=(8, 10))
+
+    vmax = max(mse_training.max(), mse_evaluation.max())
+
+    # First heatmap: Training MSE
+    im1 = axes[0].imshow(mse_training, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='gray_r')
+    axes[0].set_title("MSE (Entrenamiento)")
+    axes[0].set_ylabel("λ")
+
+    if lambdas is not None:
+        axes[0].set_yticks(np.arange(len(lambdas)))
+        axes[0].set_yticklabels(lambdas)
+
+    if polydeg is not None:
+        axes[0].set_xticks(np.arange(len(polydeg)))
+        axes[0].set_xticklabels(polydeg)
+
+    fig.colorbar(im1, ax=axes[0], label="MSE")
+
+    # Second heatmap: Evaluation MSE
+    im2 = axes[1].imshow(mse_evaluation, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='gray_r')
+    axes[1].set_title("MSE (Evaluación)")
+    axes[1].set_xlabel("Orden de regresión")
+    axes[1].set_ylabel("λ")
+
+    if lambdas is not None:
+        axes[1].set_yticks(np.arange(len(lambdas)))
+        axes[1].set_yticklabels(lambdas)
+
+    if polydeg is not None:
+        axes[1].set_xticks(np.arange(len(polydeg)))
+        axes[1].set_xticklabels(polydeg)
+
+    fig.colorbar(im2, ax=axes[1], label="MSE")
+    fig.suptitle(params_to_str(params))
+
+    plt.tight_layout()
+
+    if filename:
+        fig.savefig(filename)
+        plt.close(fig)
+
 def process_and_plot(data, training_ratio, lambdas, polydegrees, training=True, evaluation=True):
     hrange = [np.min(data['height']), np.max(data['height'])]
     coefs, mse_training, mse_evaluation = calc_fit_and_mse(data=data, training_ratio=training_ratio, polydegrees=polydegrees, lambdas=lambdas)
+
+    params = {
+            r"% de datos para entrenamiento":f"{100*training_ratio}%",
+        }
+    plot_mse_heatmap(mse_training, mse_evaluation, lambdas, polydegrees, params, filename=f"figs/mse_tr_{training_ratio}.png")
 
     mses=[]
     labels=[]
@@ -117,9 +165,8 @@ if __name__ == '__main__':
     data = load_data(filepath)
 
     # 100% de datos para entrenamiento
-
     training_ratio=1
-    lambdas = [0, 1.0, 5.0]
+    lambdas = [i*0.5 for i in range(10)]
     polydegrees = list(range(5))
     process_and_plot(data, training_ratio, lambdas, polydegrees, evaluation=False)
 
