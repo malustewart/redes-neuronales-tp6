@@ -2,6 +2,8 @@ import numpy as np
 from numpy.polynomial.polynomial import Polynomial as Polynomial
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+from matplotlib.ticker import LogLocator
 import random
 
 def load_data(filepath='data/akc.csv'):
@@ -46,11 +48,12 @@ def plot_height_weight_regression(height, weight, regressions:list, regression_o
         fig.savefig(filename)
         plt.close(fig)
 
-def plot_mse(x, mses, labels=None, title="MSE", ylabel="mse", xlabel="Orden regresión", params={}, filename=None):
+def plot_mse(x, mses, labels=None, title="MSE", ylabel="mse", xlabel="Orden regresión", semilogx=False, params={}, filename=None):
     fig = plt.figure(figsize=(10,8))
     ax = fig.gca()
+    plot_func = ax.semilogx if semilogx else ax.plot
     for mse, label in zip(mses, labels):
-        ax.plot(x, mse, label=label)
+        plot_func(x, mse, label=label)
     fig.legend()
     ax.set_title(title + " - " + params_to_str(params))
     ax.set_ylabel(ylabel)
@@ -81,10 +84,23 @@ def calc_fit_and_mse(data, training_ratio, polydegrees, lambdas=[0]):
 def plot_mse_heatmap(mse_training, mse_evaluation, lambdas, polydeg, params, filename):
     fig, axes = plt.subplots(2, 1, figsize=(8, 10))
 
-    vmax = max(mse_training.max(), mse_evaluation.max())
+    # LogNorm requires strictly positive values
+    eps = 1e-12
+    mse_training_safe = np.where(mse_training <= 0, eps, mse_training)
+    mse_evaluation_safe = np.where(mse_evaluation <= 0, eps, mse_evaluation)
 
-    # First heatmap: Training MSE
-    im1 = axes[0].imshow(mse_training, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='gray_r')
+    vmax = 10**np.ceil(np.log10(max(mse_training_safe.max(), mse_evaluation_safe.max())))
+    vmin = 10**np.floor(np.log10(min(mse_training_safe.min(), mse_evaluation_safe.min())))
+    locator = LogLocator(base=10, numticks=6)
+
+    # --- Training heatmap ---
+    im1 = axes[0].imshow(
+        mse_training_safe,
+        aspect='auto',
+        origin='lower',
+        norm=LogNorm(vmin=vmin, vmax=vmax),
+        cmap='gray_r'
+    )
     axes[0].set_title("MSE (Entrenamiento)")
     axes[0].set_ylabel("λ")
 
@@ -96,10 +112,16 @@ def plot_mse_heatmap(mse_training, mse_evaluation, lambdas, polydeg, params, fil
         axes[0].set_xticks(np.arange(len(polydeg)))
         axes[0].set_xticklabels(polydeg)
 
-    fig.colorbar(im1, ax=axes[0], label="MSE")
+    fig.colorbar(im1, ax=axes[0], label="MSE", ticks=locator)
 
-    # Second heatmap: Evaluation MSE
-    im2 = axes[1].imshow(mse_evaluation, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='gray_r')
+    # --- Evaluation heatmap ---
+    im2 = axes[1].imshow(
+        mse_evaluation_safe,
+        aspect='auto',
+        origin='lower',
+        norm=LogNorm(vmin=vmin, vmax=vmax),
+        cmap='gray_r'
+    )
     axes[1].set_title("MSE (Evaluación)")
     axes[1].set_xlabel("Orden de regresión")
     axes[1].set_ylabel("λ")
@@ -112,7 +134,7 @@ def plot_mse_heatmap(mse_training, mse_evaluation, lambdas, polydeg, params, fil
         axes[1].set_xticks(np.arange(len(polydeg)))
         axes[1].set_xticklabels(polydeg)
 
-    fig.colorbar(im2, ax=axes[1], label="MSE")
+    fig.colorbar(im2, ax=axes[1], label="MSE", ticks=locator)
     fig.suptitle(params_to_str(params))
 
     plt.tight_layout()
@@ -140,12 +162,14 @@ def process_and_plot(data, training_ratio, lambdas, polydegrees, training=True, 
         labels.append("Evaluación")
 
     hspace = np.linspace(hrange[0], hrange[1], 100)
+    print(lambdas)
     for i, lamda in enumerate(lambdas):
         w_est_to_plot = [[hspace, Polynomial(coef)(hspace)] for coef in coefs[i]]
         params = {
             r"% de datos para entrenamiento":f"{100*training_ratio}%",
             "lambda": lamda
         }
+        print(lamda)
         plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, polydegrees, params=params, filename=f"figs/fit_tr_{training_ratio}_lambda_{lamda}.png")
         plot_mse(polydegrees, mses=[mse[i] for mse in mses], labels=labels, params=params, filename=f"figs/mse_tr_{training_ratio}_lambda_{lamda}.png")
     
@@ -156,7 +180,7 @@ def process_and_plot(data, training_ratio, lambdas, polydegrees, training=True, 
             "Orden polinomio": deg
         }
         plot_height_weight_regression(data['height'], data['weight'], w_est_to_plot, lambdas, plotlabel="λ:", params=params, filename=f"figs/fit_tr_{training_ratio}_polydeg_{deg}.png")
-        plot_mse(lambdas, mses=[mse[:,i] for mse in mses], labels=labels, xlabel="λ", params=params, filename=f"figs/mse_tr_{training_ratio}_polydeg_{deg}.png")
+        plot_mse(lambdas, mses=[mse[:,i] for mse in mses], labels=labels, xlabel="λ", params=params, semilogx=True, filename=f"figs/mse_tr_{training_ratio}_polydeg_{deg}.png")
 
 if __name__ == '__main__':
     random.seed(123456)
@@ -166,8 +190,9 @@ if __name__ == '__main__':
 
     # 100% de datos para entrenamiento
     training_ratio=1
-    lambdas = [i*0.5 for i in range(10)]
+    lambdas = np.concatenate((np.array([0]), np.logspace(-4, 8, num=9, base=10)))
     polydegrees = list(range(5))
+    print(lambdas)
     process_and_plot(data, training_ratio, lambdas, polydegrees, evaluation=False)
 
     # 80% de datos para entrenamiento, 20% para evaluacion
